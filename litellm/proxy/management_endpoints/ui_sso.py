@@ -960,6 +960,9 @@ def process_sso_jwt_access_token(
 
 async def _raise_if_sso_exceeds_free_user_limit(premium_user: bool, prisma_client: PrismaClient | None) -> None:
     """Free tier allows SSO for up to 5 billable users; beyond that requires an Enterprise license."""
+    # NGL deployments can explicitly retain SSO without the upstream free-tier seat cap.
+    if get_secret_bool("NGL_LITELLM_UNLIMITED_SSO_USERS") is True:
+        return
     if premium_user is True:
         return
     if prisma_client is None:
