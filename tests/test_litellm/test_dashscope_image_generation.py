@@ -4,7 +4,7 @@ Unit tests for DashScope image generation support (qwen-image-2.0, qwen-image-2.
 Run in docker: pytest tests/test_litellm/test_dashscope_image_generation.py -v
 """
 
-import json
+import base64
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -12,12 +12,11 @@ import pytest
 
 import litellm
 from litellm.llms.dashscope.image_generation.transformation import (
-    DashScopeImageGenerationConfig,
     DEFAULT_API_BASE,
+    DashScopeImageGenerationConfig,
 )
-from litellm.types.utils import ImageObject, ImageResponse
+from litellm.types.utils import ImageResponse
 from litellm.utils import get_llm_provider
-
 
 # ---------------------------------------------------------------------------
 # 1. Provider detection
@@ -144,6 +143,16 @@ class TestDashScopeImageGenerationConfig:
         )
         assert req["parameters"] == {}
 
+    def test_transform_request_keeps_response_format_internal(self):
+        req = self.cfg.transform_image_generation_request(
+            model="qwen-image-2.0",
+            prompt="a secure image request",
+            optional_params={"response_format": "b64_json", "n": 1},
+            litellm_params={},
+            headers={},
+        )
+        assert req["parameters"] == {"n": 1}
+
     # ---------------------------------------------------------------------------
     # 4. Response transformation
     # ---------------------------------------------------------------------------
@@ -194,6 +203,116 @@ class TestDashScopeImageGenerationConfig:
         assert result.data is not None
         assert len(result.data) == 1
         assert result.data[0].url == image_url
+
+    def test_transform_response_converts_trusted_result_to_base64(self):
+        image_url = "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/generated/test.png?Expires=123"
+        mock_resp = self._make_mock_response(image_url)
+
+        with patch.object(
+            self.cfg,
+            "_download_result_as_base64",
+            return_value="encoded-png",
+        ) as download:
+            result = self.cfg.transform_image_generation_response(
+                model="qwen-image-2.0",
+                raw_response=mock_resp,
+                model_response=ImageResponse(),
+                logging_obj=MagicMock(),
+                request_data={},
+                optional_params={"response_format": "b64_json"},
+                litellm_params={},
+                encoding=None,
+            )
+
+        download.assert_called_once_with(image_url)
+        assert len(result.data) == 1
+        assert result.data[0].b64_json == "encoded-png"
+        assert result.data[0].url is None
+
+    @pytest.mark.parametrize(
+        "image_url",
+        [
+            "http://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/test.png",
+            "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com.evil.test/test.png",
+            "https://user@dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/test.png",
+            "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com:8443/test.png",
+            "https://127.0.0.1/test.png",
+        ],
+    )
+    def test_result_url_validation_rejects_untrusted_targets(self, image_url: str):
+        with pytest.raises(ValueError):
+            self.cfg._validate_result_url(image_url)
+
+    def test_result_url_validation_accepts_official_result_host(self):
+        self.cfg._validate_result_url(
+            "https://dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com/generated/test.png?Expires=123"
+        )
+
+    def test_download_result_as_base64_validates_png_bytes(self):
+        png_bytes = b"\x89PNG\r\n\x1a\nsecure-image"
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.headers["accept"] == "image/png"
+            return httpx.Response(
+                200,
+                headers={"content-type": "image/png"},
+                content=png_bytes,
+                request=request,
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with patch(
+            "litellm.llms.dashscope.image_generation.transformation.httpx.Client",
+            return_value=client,
+        ):
+            result = self.cfg._download_result_as_base64(
+                "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/generated/test.png?Expires=123"
+            )
+
+        assert base64.b64decode(result) == png_bytes
+
+    def test_download_result_as_base64_rejects_redirect(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                302,
+                headers={"location": "https://example.com/image.png"},
+                request=request,
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with (
+            patch(
+                "litellm.llms.dashscope.image_generation.transformation.httpx.Client",
+                return_value=client,
+            ),
+            pytest.raises(ValueError, match="HTTP 302"),
+        ):
+            self.cfg._download_result_as_base64(
+                "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/generated/test.png?Expires=123"
+            )
+
+    def test_download_result_as_base64_rejects_oversized_response(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={
+                    "content-type": "image/png",
+                    "content-length": str(25 * 1024 * 1024 + 1),
+                },
+                request=request,
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with (
+            patch(
+                "litellm.llms.dashscope.image_generation.transformation.httpx.Client",
+                return_value=client,
+            ),
+            pytest.raises(ValueError, match="size limit"),
+        ):
+            self.cfg._download_result_as_base64(
+                "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/generated/test.png?Expires=123"
+            )
 
     def test_transform_response_multiple_images(self):
         body = {
@@ -293,14 +412,23 @@ class TestDashScopeImageGenerationConfig:
         )
         assert mapped["size"] == "1024*1024"
 
-    def test_map_openai_params_n_to_image_count(self):
+    def test_map_openai_params_n(self):
         mapped = self.cfg.map_openai_params(
             non_default_params={"n": 2},
             optional_params={},
             model="qwen-image-2.0",
             drop_params=False,
         )
-        assert mapped["image_count"] == 2
+        assert mapped["n"] == 2
+
+    def test_map_openai_params_response_format_for_internal_conversion(self):
+        mapped = self.cfg.map_openai_params(
+            non_default_params={"response_format": "b64_json"},
+            optional_params={},
+            model="qwen-image-2.0",
+            drop_params=False,
+        )
+        assert mapped["response_format"] == "b64_json"
 
     def test_map_openai_params_unknown_size_uses_asterisk(self):
         mapped = self.cfg.map_openai_params(
@@ -399,3 +527,50 @@ def test_litellm_image_generation_dashscope_end_to_end():
             body = call_kwargs["json"]
             assert "input" in body
             assert "messages" in body["input"]
+
+
+def test_litellm_image_generation_dashscope_base64_end_to_end():
+    image_url = "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/generated/test.png?Expires=123"
+    mock_response_body = {
+        "output": {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"image": image_url}],
+                    },
+                }
+            ]
+        },
+        "usage": {"image_count": 1},
+    }
+
+    with (
+        patch("litellm.llms.custom_httpx.llm_http_handler.HTTPHandler.post") as mock_post,
+        patch.object(
+            DashScopeImageGenerationConfig,
+            "_download_result_as_base64",
+            return_value="encoded-png",
+        ) as download,
+    ):
+        mock_http_response = MagicMock()
+        mock_http_response.json.return_value = mock_response_body
+        mock_http_response.status_code = 200
+        mock_http_response.headers = {}
+        mock_post.return_value = mock_http_response
+
+        response = litellm.image_generation(
+            model="dashscope/qwen-image-2.0",
+            prompt="a secure presentation image",
+            api_key="sk-test-key",
+            n=1,
+            response_format="b64_json",
+            size="1024x1024",
+        )
+
+        assert response.data[0].b64_json == "encoded-png"
+        assert response.data[0].url is None
+        download.assert_called_once_with(image_url)
+        request_body = mock_post.call_args.kwargs["json"]
+        assert request_body["parameters"] == {"n": 1, "size": "1024*1024"}

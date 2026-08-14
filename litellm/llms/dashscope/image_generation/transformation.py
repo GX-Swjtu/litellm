@@ -23,7 +23,10 @@ Response format:
 }
 """
 
+import base64
+import re
 from typing import TYPE_CHECKING, Any, Final
+from urllib.parse import urlparse
 
 import httpx
 
@@ -45,6 +48,12 @@ else:
     LiteLLMLoggingObj = Any
 
 DEFAULT_API_BASE: Final = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+MAX_DASHSCOPE_IMAGE_BYTES: Final = 25 * 1024 * 1024
+_DASHSCOPE_RESULT_HOST: Final = re.compile(
+    r"^dashscope-result(?:-[a-z0-9-]+)?\.oss-"
+    r"(?:cn|ap|eu|us|me|na)-[a-z0-9-]+\.aliyuncs\.com$"
+)
+_PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
 
 # Maps OpenAI size strings (WxH) to DashScope size strings (W*H)
 OPENAI_TO_DASHSCOPE_SIZE: Final[dict] = {
@@ -63,7 +72,7 @@ class DashScopeImageGenerationConfig(BaseImageGenerationConfig):
     """
 
     def get_supported_openai_params(self, model: str) -> list[OpenAIImageGenerationOptionalParams]:
-        return ["n", "size"]
+        return ["n", "response_format", "size"]
 
     def map_openai_params(
         self,
@@ -83,7 +92,11 @@ class DashScopeImageGenerationConfig(BaseImageGenerationConfig):
                 # Convert "WxH" → "W*H"
                 mapped["size"] = OPENAI_TO_DASHSCOPE_SIZE.get(v, v.replace("x", "*"))
             elif k == "n":
-                mapped["image_count"] = v
+                mapped["n"] = v
+            elif k == "response_format":
+                # DashScope always returns a temporary OSS URL. Keep this as an
+                # internal response-conversion instruction and do not forward it.
+                mapped["response_format"] = v
         return mapped
 
     def get_complete_url(
@@ -127,6 +140,8 @@ class DashScopeImageGenerationConfig(BaseImageGenerationConfig):
         """
         parameters: Final[dict] = {}
         for k, v in optional_params.items():
+            if k == "response_format":
+                continue
             parameters[k] = v
 
         return {
@@ -141,6 +156,66 @@ class DashScopeImageGenerationConfig(BaseImageGenerationConfig):
             },
             "parameters": parameters,
         }
+
+    @staticmethod
+    def _validate_result_url(image_url: str) -> None:
+        parsed = urlparse(image_url)
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("invalid port") from exc
+
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme != "https"
+            or parsed.username is not None
+            or parsed.password is not None
+            or port not in (None, 443)
+            or parsed.fragment
+            or not _DASHSCOPE_RESULT_HOST.fullmatch(hostname)
+        ):
+            raise ValueError("untrusted DashScope result URL")
+
+    @classmethod
+    def _download_result_as_base64(cls, image_url: str) -> str:
+        cls._validate_result_url(image_url)
+        image_bytes = bytearray()
+        timeout = httpx.Timeout(120.0, connect=10.0)
+        with httpx.Client(
+            follow_redirects=False,
+            timeout=timeout,
+            trust_env=True,
+        ) as client:
+            with client.stream(
+                "GET",
+                image_url,
+                headers={"Accept": "image/png"},
+            ) as response:
+                if response.status_code != 200:
+                    raise ValueError(f"DashScope result download returned HTTP {response.status_code}")
+
+                content_type = response.headers.get("content-type", "")
+                media_type = content_type.split(";", 1)[0].strip().lower()
+                if media_type not in {"image/png", "application/octet-stream"}:
+                    raise ValueError("DashScope result is not a PNG response")
+
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        declared_length = int(content_length)
+                    except ValueError as exc:
+                        raise ValueError("invalid DashScope result content length") from exc
+                    if declared_length > MAX_DASHSCOPE_IMAGE_BYTES:
+                        raise ValueError("DashScope result exceeds the image size limit")
+
+                for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                    image_bytes.extend(chunk)
+                    if len(image_bytes) > MAX_DASHSCOPE_IMAGE_BYTES:
+                        raise ValueError("DashScope result exceeds the image size limit")
+
+        if not image_bytes.startswith(_PNG_SIGNATURE):
+            raise ValueError("DashScope result does not contain PNG data")
+        return base64.b64encode(image_bytes).decode("ascii")
 
     def transform_image_generation_response(
         self,
@@ -195,6 +270,17 @@ class DashScopeImageGenerationConfig(BaseImageGenerationConfig):
             for content_item in content_list:
                 image_url = content_item.get("image")
                 if image_url:
-                    model_response.data.append(ImageObject(url=image_url))
+                    if optional_params.get("response_format") == "b64_json":
+                        try:
+                            encoded_image = self._download_result_as_base64(image_url)
+                        except (httpx.HTTPError, ValueError) as exc:
+                            raise self.get_error_class(
+                                error_message=(f"Failed to retrieve the generated DashScope image: {exc}"),
+                                status_code=502,
+                                headers=raw_response.headers,
+                            ) from exc
+                        model_response.data.append(ImageObject(b64_json=encoded_image))
+                    else:
+                        model_response.data.append(ImageObject(url=image_url))
 
         return model_response
