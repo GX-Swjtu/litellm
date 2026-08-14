@@ -50,8 +50,8 @@ else:
 DEFAULT_API_BASE: Final = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 MAX_DASHSCOPE_IMAGE_BYTES: Final = 25 * 1024 * 1024
 _DASHSCOPE_RESULT_HOST: Final = re.compile(
-    r"^dashscope-result(?:-[a-z0-9-]+)?\.oss-"
-    r"(?:cn|ap|eu|us|me|na)-[a-z0-9-]+\.aliyuncs\.com$"
+    r"^dashscope(?:-[a-z0-9-]+)?\.oss"
+    r"(?:-[a-z0-9-]+)?\.aliyuncs\.com$"
 )
 _PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
 

@@ -205,7 +205,7 @@ class TestDashScopeImageGenerationConfig:
         assert result.data[0].url == image_url
 
     def test_transform_response_converts_trusted_result_to_base64(self):
-        image_url = "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/generated/test.png?Expires=123"
+        image_url = "https://dashscope-0484.oss-accelerate.aliyuncs.com/generated/test.png?Expires=123"
         mock_resp = self._make_mock_response(image_url)
 
         with patch.object(
@@ -236,6 +236,8 @@ class TestDashScopeImageGenerationConfig:
             "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com.evil.test/test.png",
             "https://user@dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/test.png",
             "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com:8443/test.png",
+            "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/test.png#fragment",
+            "https://other-bucket.oss-accelerate.aliyuncs.com/test.png",
             "https://127.0.0.1/test.png",
         ],
     )
@@ -243,10 +245,17 @@ class TestDashScopeImageGenerationConfig:
         with pytest.raises(ValueError):
             self.cfg._validate_result_url(image_url)
 
-    def test_result_url_validation_accepts_official_result_host(self):
-        self.cfg._validate_result_url(
-            "https://dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com/generated/test.png?Expires=123"
-        )
+    @pytest.mark.parametrize(
+        "image_url",
+        [
+            "https://dashscope-0484.oss-accelerate.aliyuncs.com/generated/test.png?Expires=123",
+            "https://dashscope-result-wlcb.oss-cn-wulanchabu.aliyuncs.com/generated/test.png?Expires=123",
+            "https://dashscope-result.oss-accelerate-overseas.aliyuncs.com/generated/test.png?Expires=123",
+            "https://dashscope-result.oss.aliyuncs.com/generated/test.png?Expires=123",
+        ],
+    )
+    def test_result_url_validation_accepts_official_result_hosts(self, image_url: str):
+        self.cfg._validate_result_url(image_url)
 
     def test_download_result_as_base64_validates_png_bytes(self):
         png_bytes = b"\x89PNG\r\n\x1a\nsecure-image"
@@ -266,10 +275,31 @@ class TestDashScopeImageGenerationConfig:
             return_value=client,
         ):
             result = self.cfg._download_result_as_base64(
-                "https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/generated/test.png?Expires=123"
+                "https://dashscope-0484.oss-accelerate.aliyuncs.com/generated/test.png?Expires=123"
             )
 
         assert base64.b64decode(result) == png_bytes
+
+    def test_download_result_as_base64_rejects_non_png_bytes(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-type": "image/png"},
+                content=b"not-a-png",
+                request=request,
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with (
+            patch(
+                "litellm.llms.dashscope.image_generation.transformation.httpx.Client",
+                return_value=client,
+            ),
+            pytest.raises(ValueError, match="PNG data"),
+        ):
+            self.cfg._download_result_as_base64(
+                "https://dashscope-0484.oss-accelerate.aliyuncs.com/generated/test.png?Expires=123"
+            )
 
     def test_download_result_as_base64_rejects_redirect(self):
         def handler(request: httpx.Request) -> httpx.Response:
