@@ -159,13 +159,13 @@ class DashScopeImageGenerationConfig(BaseImageGenerationConfig):
 
     @staticmethod
     def _validate_result_url(image_url: str) -> None:
-        parsed = urlparse(image_url)
+        parsed: Final = urlparse(image_url)
         try:
-            port = parsed.port
+            port: Final = parsed.port
         except ValueError as exc:
             raise ValueError("invalid port") from exc
 
-        hostname = (parsed.hostname or "").lower().rstrip(".")
+        hostname: Final = (parsed.hostname or "").lower().rstrip(".")
         if (
             parsed.scheme != "https"
             or parsed.username is not None
@@ -179,39 +179,41 @@ class DashScopeImageGenerationConfig(BaseImageGenerationConfig):
     @classmethod
     def _download_result_as_base64(cls, image_url: str) -> str:
         cls._validate_result_url(image_url)
-        image_bytes = bytearray()
-        timeout = httpx.Timeout(120.0, connect=10.0)
-        with httpx.Client(
-            follow_redirects=False,
-            timeout=timeout,
-            trust_env=True,
-        ) as client:
-            with client.stream(
+        image_bytes: Final = bytearray()
+        timeout: Final = httpx.Timeout(120.0, connect=10.0)
+        with (
+            httpx.Client(
+                follow_redirects=False,
+                timeout=timeout,
+                trust_env=True,
+            ) as client,
+            client.stream(
                 "GET",
                 image_url,
                 headers={"Accept": "image/png"},
-            ) as response:
-                if response.status_code != 200:
-                    raise ValueError(f"DashScope result download returned HTTP {response.status_code}")
+            ) as response,
+        ):
+            if response.status_code != 200:
+                raise ValueError(f"DashScope result download returned HTTP {response.status_code}")
 
-                content_type = response.headers.get("content-type", "")
-                media_type = content_type.split(";", 1)[0].strip().lower()
-                if media_type not in {"image/png", "application/octet-stream"}:
-                    raise ValueError("DashScope result is not a PNG response")
+            content_type: Final = response.headers.get("content-type", "")
+            media_type: Final = content_type.split(";", 1)[0].strip().lower()
+            if media_type not in {"image/png", "application/octet-stream"}:
+                raise ValueError("DashScope result is not a PNG response")
 
-                content_length = response.headers.get("content-length")
-                if content_length:
-                    try:
-                        declared_length = int(content_length)
-                    except ValueError as exc:
-                        raise ValueError("invalid DashScope result content length") from exc
-                    if declared_length > MAX_DASHSCOPE_IMAGE_BYTES:
-                        raise ValueError("DashScope result exceeds the image size limit")
+            content_length: Final = response.headers.get("content-length")
+            if content_length:
+                try:
+                    declared_length: Final = int(content_length)
+                except ValueError as exc:
+                    raise ValueError("invalid DashScope result content length") from exc
+                if declared_length > MAX_DASHSCOPE_IMAGE_BYTES:
+                    raise ValueError("DashScope result exceeds the image size limit")
 
-                for chunk in response.iter_bytes(chunk_size=64 * 1024):
-                    image_bytes.extend(chunk)
-                    if len(image_bytes) > MAX_DASHSCOPE_IMAGE_BYTES:
-                        raise ValueError("DashScope result exceeds the image size limit")
+            for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                image_bytes.extend(chunk)
+                if len(image_bytes) > MAX_DASHSCOPE_IMAGE_BYTES:
+                    raise ValueError("DashScope result exceeds the image size limit")
 
         if not image_bytes.startswith(_PNG_SIGNATURE):
             raise ValueError("DashScope result does not contain PNG data")
