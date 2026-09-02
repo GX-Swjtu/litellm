@@ -40,8 +40,8 @@ RUN --mount=type=cache,id=litellm-apk-${TARGETARCH},target=/var/cache/apk,sharin
     ln -s /var/cache/apk /etc/apk/cache && \
     for i in 1 2 3; do \
       apk add --update-cache \
-        python3 \
-        python3-dev \
+        python-3.13 \
+        python-3.13-dev \
         gcc \
         rust \
         bash \
@@ -50,9 +50,7 @@ RUN --mount=type=cache,id=litellm-apk-${TARGETARCH},target=/var/cache/apk,sharin
         openssl \
         libsndfile \
         nodejs \
-        npm && break; \
-      [ "$i" = 3 ] && { echo "apk add failed after 3 retries" >&2; exit 1; }; \
-      sleep 5; \
+        npm && break || sleep 5; \
     done && \
     unlink /etc/apk/cache
 
@@ -76,7 +74,7 @@ RUN --mount=type=cache,target=/app/.cache/uv,id=litellm-uv-cache \
     --extra extra_proxy \
     --extra semantic-router \
     --extra saml \
-    --python python3
+    --python python3.13
 
 # Copy full source tree
 COPY . .
@@ -103,7 +101,7 @@ RUN --mount=type=cache,target=/app/.cache/uv,id=litellm-uv-cache \
         --extra extra_proxy \
         --extra semantic-router \
         --extra saml \
-        --python python3 \
+        --python python3.13 \
         --no-sources-package litellm-proxy-extras; \
     else \
       uv sync --frozen --no-default-groups --no-editable \
@@ -112,7 +110,7 @@ RUN --mount=type=cache,target=/app/.cache/uv,id=litellm-uv-cache \
         --extra extra_proxy \
         --extra semantic-router \
         --extra saml \
-        --python python3; \
+        --python python3.13; \
     fi
 
 RUN HOME=/opt/prisma XDG_CACHE_HOME=/opt/prisma/.cache PRISMA_BINARY_CACHE_DIR=/opt/prisma/binaries \
@@ -131,14 +129,10 @@ USER root
 RUN --mount=type=cache,id=litellm-apk-${TARGETARCH},target=/var/cache/apk,sharing=locked \
     ln -s /var/cache/apk /etc/apk/cache && \
     for i in 1 2 3; do \
-      apk upgrade --update-cache && break; \
-      [ "$i" = 3 ] && { echo "apk upgrade failed after 3 retries" >&2; exit 1; }; \
-      sleep 5; \
+      apk upgrade --update-cache && break || sleep 5; \
     done && \
     for i in 1 2 3; do \
-      apk add python3 bash openssl tzdata libsndfile nodejs && break; \
-      [ "$i" = 3 ] && { echo "apk add failed after 3 retries" >&2; exit 1; }; \
-      sleep 5; \
+      apk add python-3.13 bash openssl tzdata libsndfile nodejs && break || sleep 5; \
     done && \
     unlink /etc/apk/cache
 

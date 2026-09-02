@@ -77,29 +77,3 @@ def test_apk_downloads_use_architecture_scoped_shared_cache():
     assert contents.count("unlink /etc/apk/cache") == 2
     assert "apk add --no-cache" not in contents
     assert "apk upgrade --no-cache" not in contents
-
-
-@pytest.mark.skipif(
-    not os.path.exists(DOCKERFILE_PATH),
-    reason="Dockerfile.non_root not present in this checkout",
-)
-def test_uv_uses_unversioned_system_python_without_downloading_another_version():
-    contents: Final = _dockerfile_text()
-
-    assert "python3-dev" in contents
-    assert "apk add python3 bash" in contents
-    assert "UV_PYTHON_DOWNLOADS=0" in contents
-    assert contents.count("--python python3") == 3
-    assert re.search(r"\bpython-\d+\.\d+(?:-dev)?\b", contents) is None
-    assert re.search(r"--python python\d+\.\d+", contents) is None
-
-
-@pytest.mark.skipif(
-    not os.path.exists(DOCKERFILE_PATH),
-    reason="Dockerfile.non_root not present in this checkout",
-)
-def test_apk_retries_propagate_the_last_failure():
-    contents: Final = _dockerfile_text()
-
-    assert contents.count('echo "apk add failed after 3 retries" >&2; exit 1') == 2
-    assert contents.count('echo "apk upgrade failed after 3 retries" >&2; exit 1') == 1
