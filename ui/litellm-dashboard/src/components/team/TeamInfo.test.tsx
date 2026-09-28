@@ -1589,10 +1589,10 @@ describe("TeamInfoView", () => {
       });
     });
 
-    it("should show a route picked from the dropdown in the field and save it", async () => {
+    it.each([false, true])("saves a picked pass through route with premium=%s", async (premiumUser) => {
       const user = userEvent.setup({ delay: null });
 
-      renderWithProviders(<TeamInfoView {...defaultProps} premiumUser={true} />);
+      renderWithProviders(<TeamInfoView {...defaultProps} premiumUser={premiumUser} />);
 
       await waitFor(() => {
         expect(screen.queryAllByText("Test Team").length).toBeGreaterThan(0);

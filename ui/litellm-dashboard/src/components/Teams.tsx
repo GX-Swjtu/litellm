@@ -1013,17 +1013,12 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                           name="allowed_passthrough_routes"
                           className="mt-8"
                           label={
-                            !premiumUser
+                            !isProxyAdminRole(userRole || "")
                               ? labelWithHint(
                                   "Allowed Pass Through Routes",
-                                  "Premium feature - Upgrade to set allowed pass through routes",
+                                  "Only proxy admins can set allowed pass through routes",
                                 )
-                              : !isProxyAdminRole(userRole || "")
-                                ? labelWithHint(
-                                    "Allowed Pass Through Routes",
-                                    "Only proxy admins can set allowed pass through routes",
-                                  )
-                                : "Allowed Pass Through Routes"
+                              : "Allowed Pass Through Routes"
                           }
                         >
                           {({ value, onChange }) => (
@@ -1032,7 +1027,7 @@ const Teams: React.FC<TeamProps> = ({ accessToken, userID, userRole, premiumUser
                               onChange={onChange}
                               accessToken={accessToken || ""}
                               placeholder="Select pass through routes (optional)"
-                              disabled={!premiumUser || !isProxyAdminRole(userRole || "")}
+                              disabled={!isProxyAdminRole(userRole || "")}
                             />
                           )}
                         </FormField>

@@ -92,6 +92,7 @@ export function KeyEditView({
   const canViewPolicies = hasCapability(userRole, "viewPolicies");
   const canViewPrompts = hasCapability(userRole, "viewPrompts");
   const canEditEstimates = userRole != null && isProxyAdminRole(userRole);
+  const canEditPassThroughRoutes = isProxyAdminRole(userRole ?? "");
   const estimateTooltip = estimateTooltips(canEditEstimates);
   const form = useZodForm<KeyEditFormValues, KeyEditFormValues>(keyEditFormSchema, {
     defaultValues: toKeyEditFormValues(keyData),
@@ -701,11 +702,11 @@ export function KeyEditView({
             control={form.control}
             name="allowed_passthrough_routes"
             label={
-              premiumUser
+              canEditPassThroughRoutes
                 ? "Allowed Pass Through Routes"
                 : labelWithHint(
                     "Allowed Pass Through Routes",
-                    "Setting allowed pass through routes by key is a premium feature",
+                    "Only proxy admins can set allowed pass through routes",
                   )
             }
           >
@@ -714,13 +715,8 @@ export function KeyEditView({
                 value={value as string[] | undefined}
                 onChange={onChange}
                 accessToken={accessToken || ""}
-                placeholder={currentValuePlaceholder(
-                  premiumUser,
-                  keyData.metadata?.allowed_passthrough_routes,
-                  "Premium feature - Upgrade to set allowed pass through routes by key",
-                  "Select or enter allowed pass through routes",
-                )}
-                disabled={!premiumUser}
+                placeholder="Select or enter allowed pass through routes"
+                disabled={!canEditPassThroughRoutes}
               />
             )}
           </FormField>

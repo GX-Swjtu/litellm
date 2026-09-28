@@ -12,6 +12,7 @@ import {
   getDefaultTeamSettings,
   getGuardrailsList,
   getPoliciesList,
+  getPassThroughEndpointsCall,
   teamCreateCall,
 } from "./networking";
 import Teams from "./Teams";
@@ -42,6 +43,7 @@ vi.mock("./networking", () => ({
   getGuardrailsList: vi.fn().mockResolvedValue({ guardrails: [] }),
   getPoliciesList: vi.fn().mockResolvedValue({ policies: [] }),
   getDefaultTeamSettings: vi.fn().mockResolvedValue({ values: {} }),
+  getPassThroughEndpointsCall: vi.fn().mockResolvedValue({ endpoints: [] }),
 }));
 
 // Teams invalidates teamsTableKeys on mutations; the selected team is passed up from the table.
@@ -1275,6 +1277,18 @@ describe("Teams - the exact bytes the create call sends", () => {
       expect(screen.getAllByText(mountedProbe).length).toBeGreaterThan(0);
     });
   };
+
+  it("lets a non-premium admin grant pass through routes when creating a team", async () => {
+    vi.mocked(getPassThroughEndpointsCall).mockResolvedValueOnce({ endpoints: [{ path: "/paddleocr" }] });
+    await openCreateModal();
+    await openSection("Additional Settings", /Allowed Pass Through Routes/);
+    const selector = await screen.findByRole("combobox", { name: "Select pass through routes (optional)" });
+    expect(selector).toBeEnabled();
+    await userEvent.click(selector);
+    await userEvent.click(await screen.findByRole("option", { name: "/paddleocr" }));
+    await userEvent.keyboard("{Escape}");
+    expect((await submit()).allowed_passthrough_routes).toEqual(["/paddleocr"]);
+  });
 
   it("sends three keys and nothing else when every section is left closed", async () => {
     await openCreateModal();

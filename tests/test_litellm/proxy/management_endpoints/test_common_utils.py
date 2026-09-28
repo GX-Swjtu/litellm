@@ -1120,3 +1120,45 @@ class TestUpdateMetadataFieldsPremiumCheck:
         }
         _update_metadata_fields(updated_kv)
         mock_check.assert_called()
+
+
+@pytest.mark.parametrize("entity", ["key", "team"])
+def test_passthrough_routes_can_be_saved_without_enterprise(entity: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    import litellm.proxy.proxy_server as proxy
+    from litellm.proxy._types import GenerateKeyRequest
+    from litellm.proxy.management_endpoints.common_utils import _check_passthrough_routes_caller_permission
+
+    monkeypatch.setattr(proxy, "premium_user", False)
+    routes = ["/paddleocr"]
+    data = GenerateKeyRequest(allowed_passthrough_routes=routes)
+    admin = UserAPIKeyAuth(user_role=LitellmUserRoles.PROXY_ADMIN)
+    _check_passthrough_routes_caller_permission(data, admin, entity=entity)
+    stored = data if entity == "key" else LiteLLM_TeamTable(team_id="test-team")
+    _set_object_metadata_field(stored, "allowed_passthrough_routes", routes)
+    assert stored.metadata["allowed_passthrough_routes"] == routes
+
+
+@pytest.mark.parametrize("routes", [["/paddleocr"], []])
+def test_passthrough_routes_update_and_clear_without_enterprise(routes: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    import litellm.proxy.proxy_server as proxy
+
+    monkeypatch.setattr(proxy, "premium_user", False)
+    updated = {"allowed_passthrough_routes": routes, "metadata": {"other": "preserved"}}
+    _update_metadata_fields(updated)
+    assert updated == {"metadata": {"allowed_passthrough_routes": routes, "other": "preserved"}}
+
+
+@pytest.mark.asyncio
+async def test_key_passthrough_routes_update_without_enterprise(monkeypatch: pytest.MonkeyPatch) -> None:
+    import litellm.proxy.proxy_server as proxy
+    from litellm.proxy._types import LiteLLM_VerificationToken, UpdateKeyRequest
+    from litellm.proxy.management_endpoints.key_management_endpoints import prepare_key_update_data
+
+    monkeypatch.setattr(proxy, "premium_user", False)
+    updated = await prepare_key_update_data(
+        UpdateKeyRequest(key="test-key", allowed_passthrough_routes=["/paddleocr"]),
+        LiteLLM_VerificationToken(token="test-key", metadata={"other": "preserved"}),
+    )
+    assert updated["metadata"]["allowed_passthrough_routes"] == ["/paddleocr"]
+    assert updated["metadata"]["other"] == "preserved"
+    assert "allowed_passthrough_routes" not in updated

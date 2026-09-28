@@ -60,7 +60,7 @@ interface KeyInfoViewProps {
 // a real value, not "empty", so isEmptyValue(false) is false and the loop would never
 // drop it — we'd resend false on every edit and trip the gate. Booleans get their own
 // "send only when changed" guard instead (see disable_global_guardrails below).
-const PREMIUM_METADATA_FIELDS = ["policies", "guardrails", "prompts", "tags", "allowed_passthrough_routes"] as const;
+const PREMIUM_METADATA_FIELDS = ["policies", "guardrails", "prompts", "tags"] as const;
 
 const isEmptyValue = (v: unknown): boolean =>
   v == null || (Array.isArray(v) && v.length === 0) || (typeof v === "string" && v.trim() === "");

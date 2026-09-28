@@ -1575,17 +1575,12 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                     control={form.control}
                     name="allowed_passthrough_routes"
                     label={
-                      !premiumUser
+                      !is_proxy_admin
                         ? labelWithHint(
                             "Allowed Pass Through Routes",
-                            "Premium feature - Upgrade to set allowed pass through routes",
+                            "Only proxy admins can set allowed pass through routes",
                           )
-                        : !is_proxy_admin
-                          ? labelWithHint(
-                              "Allowed Pass Through Routes",
-                              "Only proxy admins can set allowed pass through routes",
-                            )
-                          : "Allowed Pass Through Routes"
+                        : "Allowed Pass Through Routes"
                     }
                   >
                     {({ value, onChange }) => (
@@ -1594,7 +1589,7 @@ const TeamInfoView: React.FC<TeamInfoProps> = ({
                         onChange={onChange}
                         accessToken={accessToken || ""}
                         placeholder="Select pass through routes"
-                        disabled={!premiumUser || !is_proxy_admin}
+                        disabled={!is_proxy_admin}
                       />
                     )}
                   </FormField>

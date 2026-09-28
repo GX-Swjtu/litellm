@@ -25,7 +25,7 @@ import { TagsInput } from "@/app/(dashboard)/guardrails/_components/content_filt
 import { ChevronDown, Info } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { type Control, useForm, useWatch, type UseFormSetValue } from "react-hook-form";
-import { rolesWithWriteAccess } from "../../utils/roles";
+import { isProxyAdminRole, rolesWithWriteAccess } from "../../utils/roles";
 import AgentSelector from "../agent_management/AgentSelector";
 import AccessGroupSelector from "../common_components/AccessGroupSelector";
 import BudgetDurationDropdown from "../common_components/budget_duration_dropdown";
@@ -213,6 +213,7 @@ export const fetchUserModels = async (
  */
 const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOpenCreate, prefillData }) => {
   const { accessToken, userId: userID, userRole, premiumUser } = useAuthorized();
+  const canEditPassThroughRoutes = isProxyAdminRole(userRole ?? "");
   const canEditGuardrails = premiumUser || (userRole != null && rolesWithWriteAccess.includes(userRole));
   const canViewPolicies = useCan("viewPolicies");
   const canViewPrompts = useCan("viewPrompts");
@@ -1394,9 +1395,9 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                         name="allowed_passthrough_routes"
                         className="mt-4"
                         help={
-                          premiumUser
+                          canEditPassThroughRoutes
                             ? "Select existing pass through routes or enter new ones"
-                            : "Premium feature - Upgrade to set pass through routes by key"
+                            : "Only proxy admins can set allowed pass through routes"
                         }
                       >
                         {(control) => (
@@ -1404,12 +1405,8 @@ const CreateKey: React.FC<CreateKeyProps> = ({ team, teams, data, addKey, autoOp
                             value={control.value as string[] | undefined}
                             onChange={control.onChange}
                             accessToken={accessToken}
-                            placeholder={
-                              !premiumUser
-                                ? "Premium feature - Upgrade to set pass through routes by key"
-                                : "Select or enter pass through routes"
-                            }
-                            disabled={!premiumUser}
+                            placeholder="Select or enter pass through routes"
+                            disabled={!canEditPassThroughRoutes}
                             teamId={selectedCreateKeyTeam ? selectedCreateKeyTeam.team_id : null}
                           />
                         )}

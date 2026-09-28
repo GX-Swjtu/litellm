@@ -2,7 +2,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderWithProviders, screen, testQueryClient, waitFor } from "../../../tests/test-utils";
 import type { Team } from "../key_team_helpers/key_list";
-import { keyCreateCall, keyCreateServiceAccountCall, modelAvailableCall, userFilterUICall } from "../networking";
+import { getPassThroughEndpointsCall, keyCreateCall, keyCreateServiceAccountCall, modelAvailableCall, userFilterUICall } from "../networking";
 import { toast } from "@/lib/toast";
 import CreateKey from "./create_key_button";
 
@@ -244,6 +244,27 @@ describe("CreateKey", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("lets a non-premium admin select a pass through route when creating a key", async () => {
+    vi.mocked(getPassThroughEndpointsCall).mockResolvedValueOnce({ endpoints: [{ path: "/paddleocr" }] });
+    await openModal();
+    await nameTheKey();
+    await openSection(/Optional Settings/i);
+    const selector = await screen.findByRole("combobox", { name: "Select or enter pass through routes" });
+    expect(selector).toBeEnabled();
+    await userEvent.click(selector);
+    await userEvent.click(await screen.findByRole("option", { name: "/paddleocr" }));
+    await userEvent.keyboard("{Escape}");
+    await submit();
+    expect((await createdPayload()).allowed_passthrough_routes).toEqual(["/paddleocr"]);
+  });
+
+  it("keeps pass through route grants disabled for non-admins even with premium", async () => {
+    state.authorized = { ...state.authorized, userRole: "Internal User", premiumUser: true };
+    await openModal();
+    await openSection(/Optional Settings/i);
+    expect(await screen.findByRole("combobox", { name: "Select or enter pass through routes" })).toBeDisabled();
   });
 
   describe("submit payload contract", () => {

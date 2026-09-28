@@ -1885,6 +1885,7 @@ describe("KeyEditView", () => {
     const renderForPayload = (
       onSubmit: (values: Record<string, unknown>) => Promise<void>,
       keyData: KeyResponse = MOCK_KEY_DATA,
+      premiumUser = true,
     ) =>
       renderWithProviders(
         <KeyEditView
@@ -1894,7 +1895,7 @@ describe("KeyEditView", () => {
           accessToken={"test-token"}
           userID={"test-user"}
           userRole={"Admin"}
-          premiumUser={true}
+          premiumUser={premiumUser}
         />,
       );
 
@@ -2133,12 +2134,12 @@ describe("KeyEditView", () => {
       expect(onSubmitMock.mock.calls[0][0].vector_stores).toEqual(["vs-1"]);
     });
 
-    it("carries a picked pass through route into the payload", async () => {
+    it.each([false, true])("carries a picked pass through route into the payload with premium=%s", async (premiumUser) => {
       vi.mocked(getPassThroughEndpointsCall).mockResolvedValueOnce({
         endpoints: [{ path: "/bria", methods: ["POST"] }],
       });
       const onSubmitMock = vi.fn().mockResolvedValue(undefined);
-      renderForPayload(onSubmitMock);
+      renderForPayload(onSubmitMock, MOCK_KEY_DATA, premiumUser);
       await screen.findByRole("button", { name: /save changes/i });
 
       await pickFromCombobox(/allowed pass through routes/, /\/bria/);

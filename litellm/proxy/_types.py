@@ -4367,6 +4367,7 @@ LiteLLM_ManagementEndpoint_MetadataFields: Final = [
     "enforced_file_expires_after",
     "throttle_on_budget_exceeded",
     "enable_prompt_caching",
+    "allowed_passthrough_routes",
 ]
 
 LiteLLM_ManagementEndpoint_MetadataFields_Premium: Final = [
@@ -4378,7 +4379,6 @@ LiteLLM_ManagementEndpoint_MetadataFields_Premium: Final = [
     "prompts",
     "logging",
     "secret_manager_settings",
-    "allowed_passthrough_routes",
 ]
 
 # Metadata keys that are immutable once set: preserved when an update omits them,
