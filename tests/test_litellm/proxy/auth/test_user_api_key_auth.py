@@ -4397,32 +4397,19 @@ async def test_centralized_common_checks_skips_public_routes():
 
 
 @pytest.mark.asyncio
-async def test_centralized_common_checks_skips_passthrough_endpoint_with_auth_false(monkeypatch):
+async def test_centralized_common_checks_skips_passthrough_endpoint_with_auth_false():
     """Regression: user-configured pass-through endpoints with
     ``auth: false`` are explicitly unauthenticated. The builder
     short-circuits and returns a fresh empty UserAPIKeyAuth(); running
     common_checks on that empty token would reject the request as
     admin-only. The "auth" flag on the endpoint config is the contract
-    — explicit False on the dispatched registration skips the gate."""
-    from fastapi import FastAPI, Request
+    — when it's anything other than True, skip the gate."""
+    import litellm.proxy.proxy_server as _proxy_server_mod
+    from fastapi import Request
     from starlette.datastructures import URL
 
-    import litellm.proxy.pass_through_endpoints.pass_through_endpoints as passthrough
-    import litellm.proxy.proxy_server as _proxy_server_mod
-
-    monkeypatch.setattr(passthrough, "_registered_pass_through_routes", {})
-    app = FastAPI()
-    await passthrough._register_pass_through_endpoint(
-        {"path": "/api/public/ingestion", "target": "https://example.com", "auth": False},
-        app,
-        False,
-        set(),
-    )
     token = UserAPIKeyAuth()
-    request = Request(scope={
-        "type": "http", "path": "/api/public/ingestion", "method": "POST",
-        "endpoint": app.routes[-1].endpoint,
-    })
+    request = Request(scope={"type": "http"})
     request._url = URL(url="/api/public/ingestion")
 
     attrs = _proxy_attrs_for_centralized_checks(user_custom_auth=None)

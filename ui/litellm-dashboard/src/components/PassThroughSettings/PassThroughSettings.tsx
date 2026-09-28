@@ -18,7 +18,6 @@ export interface passThroughItem {
   path: string;
   target: string;
   headers: object;
-  forward_headers?: boolean;
   include_subpath?: boolean;
   cost_per_request?: number;
   timeout?: number;

@@ -32387,12 +32387,6 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
-             * Forward Headers
-             * @description Forward client request headers, including Authorization, to the target endpoint. Explicitly configured headers take precedence. Defaults to False.
-             * @default false
-             */
-            forward_headers: boolean;
-            /**
              * Guardrails
              * @description Guardrails configuration for this passthrough endpoint. Dict keys are guardrail names, values are optional settings for field targeting. When set, all org/team/key level guardrails will also execute. Defaults to None (no guardrails execute).
              */

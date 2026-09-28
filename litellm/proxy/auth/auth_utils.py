@@ -1822,21 +1822,6 @@ def request_dispatched_to_pass_through_endpoint(request: Request | None) -> bool
     return getattr(endpoint, LITELLM_PASS_THROUGH_ENDPOINT_MARKER, False) is True
 
 
-def is_unauthenticated_pass_through_request(request: Request | None) -> bool:
-    """Honor explicit auth opt-out on the same registered route used for forwarding."""
-    if request is None or not request_dispatched_to_pass_through_endpoint(request):
-        return False
-
-    from litellm.proxy.pass_through_endpoints.pass_through_endpoints import (
-        InitPassThroughEndpointHelpers,
-    )
-
-    endpoint: Final = InitPassThroughEndpointHelpers.get_registered_pass_through_route(
-        route=get_request_route(request), method=request.method
-    )
-    return endpoint is not None and endpoint.get("auth") is False
-
-
 def get_model_from_request(
     request_data: dict,
     route: str,
