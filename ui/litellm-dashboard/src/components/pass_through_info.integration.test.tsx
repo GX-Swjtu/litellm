@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent, { PointerEventsCheckLevel } from "@testing-library/user-event";
-import { renderWithProviders, screen, waitFor } from "../../tests/test-utils";
+import { fireEvent, renderWithProviders, screen, waitFor } from "../../tests/test-utils";
 import PassThroughInfoView, { type PassThroughInfoProps } from "./pass_through_info";
 
 const updatePassThroughEndpoint = vi.fn();
@@ -87,9 +87,27 @@ describe("pass_through_info update payload", () => {
       cost_per_request: 2,
       timeout: 600,
       auth: false,
+      forward_headers: false,
       methods: ["GET"],
       guardrails: undefined,
     });
+  });
+
+  it.each([false, true])("saves and restores forward_headers=%s independently of auth", async (forward_headers) => {
+    const user = setup();
+    renderView(false, { ...endpoint, forward_headers });
+    await openEditForm(user);
+    const forwardSwitch = screen.getByRole("switch", { name: "Forward Client Headers" });
+    if (forward_headers) expect(forwardSwitch).toBeChecked();
+    else expect(forwardSwitch).not.toBeChecked();
+    await user.click(forwardSwitch);
+    fireEvent.change(screen.getByLabelText("Headers (JSON)"), { target: { value: "{}" } });
+    await save(user);
+    await waitFor(() => expect(updatePassThroughEndpoint).toHaveBeenCalledTimes(1));
+    expect(lastPayload()).toMatchObject({ headers: {}, forward_headers: !forward_headers, auth: false });
+    await user.click(screen.getByRole("button", { name: "Edit Settings" }));
+    if (forward_headers) expect(screen.getByRole("switch", { name: "Forward Client Headers" })).not.toBeChecked();
+    else expect(screen.getByRole("switch", { name: "Forward Client Headers" })).toBeChecked();
   });
 
   it("submits numeric fields as numbers, not strings", async () => {

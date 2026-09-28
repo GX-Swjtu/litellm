@@ -1814,11 +1814,21 @@ def create_pass_through_route(
             param_default_query_params: Final = target_params.get("default_query_params", None)
             param_timeout: Final = target_params.get("timeout", timeout)
 
-            # Construct the full target URL with subpath if needed
+            # Resolve the suffix against the selected registration, which may be
+            # more specific than the FastAPI wildcard handler that dispatched us.
+            registered_path: Final = (passthrough_params or {}).get("path")
+            matched_subpath: Final = (
+                path[len(registered_path) :].lstrip("/") if isinstance(registered_path, str) else subpath
+            )
+            matched_include_subpath: Final = (
+                passthrough_params.get("type") == "subpath"
+                if passthrough_params is not None and "type" in passthrough_params
+                else include_subpath
+            )
             full_target: Final = HttpPassThroughEndpointHelpers.construct_target_url_with_subpath(
                 base_target=cast(str, param_target),
-                subpath=subpath,
-                include_subpath=include_subpath,
+                subpath=matched_subpath,
+                include_subpath=matched_include_subpath,
             )
 
             # Ensure custom_headers is a dict. Botocore returns a HeadersDict
@@ -2909,7 +2919,12 @@ class InitPassThroughEndpointHelpers:
     def get_registered_pass_through_route(route: str, method: str | None = None) -> dict[str, Any] | None:
         """Get passthrough params for a given route and optionally filter by HTTP method"""
         comparison_route: Final = InitPassThroughEndpointHelpers._route_for_registry_lookup(route)
-        for key in _registered_pass_through_routes:
+
+        def specificity(key: str) -> tuple[int, bool]:
+            parts: Final = key.split(":", 3)
+            return (len(parts[2]), parts[1] == "exact") if len(parts) >= 3 else (0, False)
+
+        for key in sorted(_registered_pass_through_routes, key=specificity, reverse=True):
             parts = key.split(":", 3)  # Split into [endpoint_id, type, path, methods?]
             if len(parts) >= 3:
                 route_type = parts[1]
@@ -2973,9 +2988,9 @@ async def _register_pass_through_endpoint(
     forward_headers: Final = endpoint_data.get("forward_headers")
     merge_query_params: Final = endpoint_data.get("merge_query_params")
     default_query_params: Final = endpoint_data.get("default_query_params")
-    auth: Final[bool | str | None] = endpoint_data.get("auth")
+    auth: Final[bool | str | None] = endpoint_data.get("auth", True)
     dependencies = None
-    auth_enforced: Final = auth is not None and str(auth).lower() == "true"
+    auth_enforced: Final = str(auth).lower() != "false"
 
     if auth_enforced:
         # Authentication on a pass-through endpoint used to be enterprise-only.
@@ -3018,7 +3033,7 @@ async def _register_pass_through_endpoint(
     visited_endpoints.add(f"{endpoint_id}:exact:{path}:{methods_str}")
 
     if endpoint_data.get("include_subpath", False) is True:
-        if auth is not None and str(auth).lower() == "true":
+        if auth_enforced:
             wildcard_path: Final = path.rstrip("/") + "/*"
             if wildcard_path not in LiteLLMRoutes.openai_routes.value:
                 LiteLLMRoutes.openai_routes.value.append(wildcard_path)
@@ -3405,7 +3420,7 @@ async def update_pass_through_endpoints(
             path=updated_endpoint.path,
             target=updated_endpoint.target,
             custom_headers=_custom_headers,
-            forward_headers=None,  # Defaults not available in model? assuming None logic handles it
+            forward_headers=updated_endpoint.forward_headers,
             merge_query_params=None,
             dependencies=None,
             cost_per_request=updated_endpoint.cost_per_request,
@@ -3422,7 +3437,7 @@ async def update_pass_through_endpoints(
             path=updated_endpoint.path,
             target=updated_endpoint.target,
             custom_headers=_custom_headers,
-            forward_headers=None,
+            forward_headers=updated_endpoint.forward_headers,
             merge_query_params=None,
             dependencies=None,
             cost_per_request=updated_endpoint.cost_per_request,
@@ -3497,7 +3512,7 @@ async def create_pass_through_endpoints(
             path=created_endpoint.path,
             target=created_endpoint.target,
             custom_headers=_custom_headers,
-            forward_headers=None,
+            forward_headers=created_endpoint.forward_headers,
             merge_query_params=None,
             dependencies=None,
             cost_per_request=created_endpoint.cost_per_request,
@@ -3514,7 +3529,7 @@ async def create_pass_through_endpoints(
             path=created_endpoint.path,
             target=created_endpoint.target,
             custom_headers=_custom_headers,
-            forward_headers=None,
+            forward_headers=created_endpoint.forward_headers,
             merge_query_params=None,
             dependencies=None,
             cost_per_request=created_endpoint.cost_per_request,

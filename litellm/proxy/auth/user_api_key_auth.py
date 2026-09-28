@@ -65,6 +65,7 @@ from litellm.proxy.auth.auth_utils import (
     get_model_from_request,
     get_request_route,
     get_request_route_template,
+    is_unauthenticated_pass_through_request,
     iter_request_fallback_targets,
     normalize_request_route,
     pre_db_read_auth_checks,
@@ -698,6 +699,8 @@ async def check_api_key_for_custom_headers_or_pass_through_endpoints(
     pass_through_endpoints: list[dict] | None,
     api_key: str,
 ) -> UserAPIKeyAuth | str:
+    if is_unauthenticated_pass_through_request(request):
+        return UserAPIKeyAuth()
     is_mapped_pass_through_route: bool = False
     normalized_route: Final = normalize_route_for_root_path(route)
     if normalized_route is not None:
@@ -711,14 +714,6 @@ async def check_api_key_for_custom_headers_or_pass_through_endpoints(
     if pass_through_endpoints is not None:
         for endpoint in pass_through_endpoints:
             if isinstance(endpoint, dict) and endpoint.get("path", "") == route:
-                ## IF AUTH DISABLED
-                # Default to True: a config dict with no ``auth`` key
-                # otherwise produced an unauthenticated forwarder. The
-                # Pydantic ``PassThroughGenericEndpoint.auth`` default
-                # is also True, but raw config dicts skip that path —
-                # so this runtime check has to default to True too.
-                if endpoint.get("auth", True) is not True:
-                    return UserAPIKeyAuth()
                 ## IF AUTH ENABLED
                 ### IF CUSTOM PARSER REQUIRED
                 if endpoint.get("custom_auth_parser") is not None and endpoint.get("custom_auth_parser") == "langfuse":
@@ -1240,6 +1235,10 @@ async def _user_api_key_auth_builder(
                 route=route,
             )
         pass_through_endpoints: Final[list[dict] | None] = general_settings.get("pass_through_endpoints", None)
+        # Upstream credentials (including JWTs) belong to the target service.
+        # Decide this before interpreting the Authorization header as a LiteLLM key.
+        if is_unauthenticated_pass_through_request(request):
+            return UserAPIKeyAuth()
         ## CHECK IF X-LITELM-API-KEY IS PASSED IN - supercedes Authorization header
         api_key, passed_in_key = get_api_key(
             custom_litellm_key_header=custom_litellm_key_header,
@@ -2410,11 +2409,8 @@ async def _run_centralized_common_checks(
     # common_checks on the empty token would reject the request as
     # admin-only. The "auth" flag on the endpoint config is the
     # contract; honor it.
-    pass_through_endpoints: Final = general_settings.get("pass_through_endpoints", None)
-    if pass_through_endpoints is not None:
-        for endpoint in pass_through_endpoints:
-            if isinstance(endpoint, dict) and endpoint.get("path", "") == route and endpoint.get("auth") is not True:
-                return
+    if is_unauthenticated_pass_through_request(request):
+        return
 
     # No-auth dev mode: master_key unset AND no JWT/OAuth2 auth
     # configured. The builder returns an INTERNAL_USER token for any

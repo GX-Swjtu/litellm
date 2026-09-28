@@ -25,6 +25,7 @@ const HTTP_METHOD_OPTIONS = HTTP_METHODS.map((method) => ({ label: method, value
 const endpointSettingsSchema = z.object({
   target: z.string().min(1, "Please input a target URL"),
   headers: z.string(),
+  forward_headers: z.boolean(),
   methods: z.array(z.string()),
   include_subpath: z.boolean(),
   cost_per_request: z.number().optional(),
@@ -104,6 +105,7 @@ interface PassThroughEndpoint {
   cost_per_request?: number;
   timeout?: number;
   auth?: boolean;
+  forward_headers?: boolean;
   methods?: string[];
   guardrails?: Record<string, { request_fields?: string[]; response_fields?: string[] } | null>;
 }
@@ -160,6 +162,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
       cost_per_request: initialEndpointData.cost_per_request,
       timeout: initialEndpointData.timeout,
       auth: initialEndpointData.auth ?? true,
+      forward_headers: initialEndpointData.forward_headers ?? false,
     },
   });
 
@@ -192,6 +195,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
         cost_per_request: values.cost_per_request,
         timeout: values.timeout,
         auth: values.auth,
+        forward_headers: values.forward_headers,
         methods: values.methods.length > 0 ? values.methods : undefined,
         guardrails: guardrails && Object.keys(guardrails).length > 0 ? guardrails : undefined,
       };
@@ -392,6 +396,17 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
                       )}
                     </FormField>
 
+                    <FormField
+                      control={form.control}
+                      name="forward_headers"
+                      label="Forward Client Headers"
+                      description="Forward incoming headers, including Authorization, to the target API. Configured headers below override client headers."
+                    >
+                      {({ value, onChange, ...field }) => (
+                        <Switch {...field} checked={value} onCheckedChange={onChange} />
+                      )}
+                    </FormField>
+
                     <FormField control={form.control} name="headers" label="Headers (JSON)">
                       {({ value, ...field }) => (
                         <Textarea
@@ -533,6 +548,12 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
                       <p className="text-sm font-medium">Authentication Required</p>
                       <Badge variant={endpointData.auth ? "secondary" : "outline"}>
                         {endpointData.auth ? "Yes" : "No"}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Forward Client Headers</p>
+                      <Badge variant={endpointData.forward_headers ? "secondary" : "outline"}>
+                        {endpointData.forward_headers ? "Yes" : "No"}
                       </Badge>
                     </div>
                     <div>

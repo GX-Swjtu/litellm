@@ -83,6 +83,7 @@ const reopenedPayload = {
   methods: undefined,
   default_query_params: undefined,
   auth: true,
+  forward_headers: false,
   timeout: undefined,
   cost_per_request: undefined,
 };
@@ -115,9 +116,36 @@ describe("add_pass_through submit payload", () => {
       methods: undefined,
       default_query_params: undefined,
       auth: true,
+      forward_headers: false,
       timeout: "900",
       cost_per_request: "1.5",
     });
+  });
+
+  it("creates a transparent forwarder without configured credentials", async () => {
+    const user = setup();
+    renderForm(false);
+    await openModal(user);
+    fireEvent.change(screen.getByPlaceholderText("bria"), { target: { value: "paddleocr" } });
+    fireEvent.change(screen.getByPlaceholderText("https://engine.prod.bria-api.com"), {
+      target: { value: "https://paddleocr.aistudio-app.com" },
+    });
+    const forwardSwitch = screen.getByRole("switch", { name: "Forward Client Headers" });
+    expect(forwardSwitch).not.toBeChecked();
+    await user.click(forwardSwitch);
+    await user.click(screen.getByRole("switch", { name: "Require Virtual Key" }));
+    await submit(user);
+    await waitFor(() => expect(createPassThroughEndpoint).toHaveBeenCalledTimes(1));
+    const expectedPayload = {
+      path: "/paddleocr",
+      headers: {},
+      forward_headers: true,
+      auth: false,
+      include_subpath: true,
+    };
+    expect(lastPayload()).toMatchObject(expectedPayload);
+    await openModal(user);
+    expect(screen.getByRole("switch", { name: "Forward Client Headers" })).not.toBeChecked();
   });
 
   it("submits numeric fields as strings, not numbers", async () => {
@@ -217,7 +245,6 @@ describe("add_pass_through submit payload", () => {
 
     expect(await screen.findByText("Path is required")).toBeInTheDocument();
     expect(screen.getByText("Target URL is required")).toBeInTheDocument();
-    expect(screen.getByText("Please configure the headers")).toBeInTheDocument();
     expect(createPassThroughEndpoint).not.toHaveBeenCalled();
   });
 

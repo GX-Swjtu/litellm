@@ -41,9 +41,8 @@ const passThroughFormSchema = z.object({
     .pipe(z.url({ error: "Please enter a valid URL" })),
   methods: z.array(z.string()).optional(),
   include_subpath: z.boolean(),
-  headers: keyValuePairsSchema.refine((pairs) => pairs.some(([name]) => name !== ""), {
-    error: "Please configure the headers",
-  }),
+  headers: keyValuePairsSchema,
+  forward_headers: z.boolean(),
   default_query_params: keyValuePairsSchema.optional(),
   auth: z.boolean(),
   timeout: z.string().optional(),
@@ -58,6 +57,7 @@ const emptyFormValues = {
   methods: undefined,
   include_subpath: true,
   headers: [],
+  forward_headers: false,
   default_query_params: undefined,
   auth: true,
   timeout: undefined,
@@ -121,6 +121,7 @@ const AddPassThroughEndpoint: React.FC<AddFallbacksProps> = ({
         methods: values.methods,
         include_subpath: values.include_subpath,
         headers: toRecord(values.headers),
+        forward_headers: values.forward_headers,
         default_query_params: optionalRecord(values.default_query_params),
         auth: values.auth,
         timeout: values.timeout,
@@ -265,9 +266,20 @@ const AddPassThroughEndpoint: React.FC<AddFallbacksProps> = ({
 
                   <FormField
                     control={form.control}
+                    name="forward_headers"
+                    label="Forward Client Headers"
+                    description="Forward incoming headers, including Authorization, to the target API. Configured headers below override client headers."
+                  >
+                    {({ value, onChange, ...field }) => (
+                      <Switch {...field} checked={value} onCheckedChange={onChange} />
+                    )}
+                  </FormField>
+
+                  <FormField
+                    control={form.control}
                     name="headers"
                     label={labelWithHint(
-                      "Authentication Headers",
+                      "Authentication Headers (Optional)",
                       "Authentication and other headers to forward with requests",
                     )}
                     description={
