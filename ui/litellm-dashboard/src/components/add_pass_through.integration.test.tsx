@@ -82,7 +82,7 @@ const reopenedPayload = {
   include_subpath: true,
   methods: undefined,
   default_query_params: undefined,
-  auth: undefined,
+  auth: true,
   timeout: undefined,
   cost_per_request: undefined,
 };
@@ -114,7 +114,7 @@ describe("add_pass_through submit payload", () => {
       include_subpath: true,
       methods: undefined,
       default_query_params: undefined,
-      auth: undefined,
+      auth: true,
       timeout: "900",
       cost_per_request: "1.5",
     });
@@ -162,15 +162,15 @@ describe("add_pass_through submit payload", () => {
     expect(lastPayload().methods).toStrictEqual(["POST"]);
   });
 
-  it("sends auth true once the premium security toggle is switched on", async () => {
+  it.each([false, true])("requires authentication by default with premiumUser=%s", async (premiumUser) => {
     const user = setup();
-    renderForm(true);
+    renderForm(premiumUser);
     await openModal(user);
     await fillRequiredFields(user);
 
-    const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(2);
-    await user.click(switches[1]);
+    const authSwitch = screen.getByRole("switch", { name: "Require Virtual Key" });
+    expect(authSwitch).toBeEnabled();
+    expect(authSwitch).toBeChecked();
 
     await submit(user);
 
@@ -178,16 +178,20 @@ describe("add_pass_through submit payload", () => {
     expect(lastPayload().auth).toBe(true);
   });
 
-  it("omits the auth key entirely for a non-premium user", async () => {
+  it.each([false, true])("sends an explicit opt-out with premiumUser=%s", async (premiumUser) => {
     const user = setup();
-    renderForm(false);
+    renderForm(premiumUser);
     await openModal(user);
     await fillRequiredFields(user);
 
+    await user.click(screen.getByRole("switch", { name: "Require Virtual Key" }));
     await submit(user);
 
     await waitFor(() => expect(createPassThroughEndpoint).toHaveBeenCalled());
-    expect(lastPayload()).not.toHaveProperty("auth");
+    expect(lastPayload().auth).toBe(false);
+
+    await openModal(user);
+    expect(screen.getByRole("switch", { name: "Require Virtual Key" })).toBeChecked();
   });
 
   it("drops include_subpath to false when the toggle is switched off", async () => {
@@ -277,6 +281,7 @@ describe("add_pass_through submit payload", () => {
     renderForm();
     await openModal(user);
     await fillRequiredFields(user);
+    await user.click(screen.getByRole("switch", { name: "Require Virtual Key" }));
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await openModal(user);

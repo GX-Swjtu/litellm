@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent, { PointerEventsCheckLevel } from "@testing-library/user-event";
 import { renderWithProviders, screen, waitFor } from "../../tests/test-utils";
-import PassThroughInfoView from "./pass_through_info";
+import PassThroughInfoView, { type PassThroughInfoProps } from "./pass_through_info";
 
 const updatePassThroughEndpoint = vi.fn();
 
@@ -31,7 +31,7 @@ const endpoint = {
   methods: ["GET"],
 };
 
-const renderView = (premiumUser = true, data = endpoint) =>
+const renderView = (premiumUser = true, data: PassThroughInfoProps["endpointData"] = endpoint) =>
   renderWithProviders(
     <PassThroughInfoView
       endpointData={data}
@@ -51,6 +51,15 @@ const openEditForm = async (user: User) => {
 const save = async (user: User) => user.click(screen.getByRole("button", { name: "Save Changes" }));
 
 const lastPayload = () => updatePassThroughEndpoint.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+
+const expectAuthEnabled = (enabled: boolean) => {
+  const authSwitch = screen.getByRole("switch", { name: "Require Virtual Key" });
+  if (enabled) {
+    expect(authSwitch).toBeChecked();
+  } else {
+    expect(authSwitch).not.toBeChecked();
+  }
+};
 
 describe("pass_through_info update payload", () => {
   beforeEach(() => {
@@ -122,15 +131,44 @@ describe("pass_through_info update payload", () => {
     expect(lastPayload().headers).toStrictEqual({ "x-api-key": "k" });
   });
 
-  it("sends auth undefined for a non-premium user", async () => {
+  it.each([false, true])("lets a non-premium admin change auth=%s and retains the saved state", async (auth) => {
     const user = setup();
-    renderView(false);
+    renderView(false, { ...endpoint, auth });
     await openEditForm(user);
+
+    const authSwitch = screen.getByRole("switch", { name: "Require Virtual Key" });
+    expect(authSwitch).toBeEnabled();
+    expectAuthEnabled(auth);
+    await user.click(authSwitch);
+    await save(user);
+
+    await waitFor(() => expect(updatePassThroughEndpoint).toHaveBeenCalled());
+    expect(lastPayload().auth).toBe(!auth);
+
+    await user.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(screen.getByText(auth ? "No Auth" : "Auth Required")).toBeVisible();
+    await openEditForm(user);
+    expectAuthEnabled(!auth);
+
+    await user.click(screen.getByRole("switch", { name: "Require Virtual Key" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Edit Settings" }));
+    expectAuthEnabled(!auth);
+    expect(updatePassThroughEndpoint).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the backend's secure default when the loaded endpoint omits auth", async () => {
+    const user = setup();
+    const { auth: _auth, ...withoutAuth } = endpoint;
+    renderView(false, withoutAuth);
+    expect(screen.getByText("Auth Required")).toBeVisible();
+    await openEditForm(user);
+    expect(screen.getByRole("switch", { name: "Require Virtual Key" })).toBeChecked();
 
     await save(user);
 
     await waitFor(() => expect(updatePassThroughEndpoint).toHaveBeenCalled());
-    expect(lastPayload().auth).toBeUndefined();
+    expect(lastPayload().auth).toBe(true);
   });
 
   it("sends methods undefined when the endpoint has none", async () => {

@@ -139,10 +139,12 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
   onClose,
   accessToken,
   isAdmin,
-  premiumUser = false,
   onEndpointUpdated,
 }) => {
-  const [endpointData, setEndpointData] = useState<PassThroughEndpoint | null>(initialEndpointData);
+  const [endpointData, setEndpointData] = useState<PassThroughEndpoint | null>({
+    ...initialEndpointData,
+    auth: initialEndpointData.auth ?? true,
+  });
   const [loading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [guardrails, setGuardrails] = useState<
@@ -157,7 +159,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
       include_subpath: initialEndpointData.include_subpath || false,
       cost_per_request: initialEndpointData.cost_per_request,
       timeout: initialEndpointData.timeout,
-      auth: initialEndpointData.auth || false,
+      auth: initialEndpointData.auth ?? true,
     },
   });
 
@@ -189,7 +191,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
         include_subpath: values.include_subpath,
         cost_per_request: values.cost_per_request,
         timeout: values.timeout,
-        auth: premiumUser ? values.auth : undefined,
+        auth: values.auth,
         methods: values.methods.length > 0 ? values.methods : undefined,
         guardrails: guardrails && Object.keys(guardrails).length > 0 ? guardrails : undefined,
       };
@@ -201,6 +203,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
         ...updateData,
       });
 
+      form.reset(values);
       setIsEditing(false);
       if (onEndpointUpdated) {
         onEndpointUpdated();
@@ -472,11 +475,7 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
 
                     <FormField control={form.control} name="auth">
                       {({ value, onChange }) => (
-                        <PassThroughSecuritySection
-                          premiumUser={premiumUser}
-                          authEnabled={value}
-                          onAuthChange={onChange}
-                        />
+                        <PassThroughSecuritySection authEnabled={value} onAuthChange={onChange} />
                       )}
                     </FormField>
 
@@ -489,7 +488,14 @@ const PassThroughInfoView: React.FC<PassThroughInfoProps> = ({
                     </div>
 
                     <div className="mt-6 flex justify-end gap-2">
-                      <Button type="button" variant="outline" onClick={() => setIsEditing(false)}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          form.reset();
+                          setIsEditing(false);
+                        }}
+                      >
                         Cancel
                       </Button>
                       <Button type="submit">Save Changes</Button>
